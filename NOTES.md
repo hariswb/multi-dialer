@@ -72,3 +72,28 @@ In priority order, targeting the risky logic rather than coverage numbers:
 3. **CRM sync:** contact created when `crmExternalId` missing and id persisted to lead; existing id skips contact creation; activity written to both stores; CRM failure marks sync FAILED without breaking the session.
 
 UI tests are skipped.
+
+## 6. What I'd do next
+
+Scoped to where the single-process design (Central tradeoff, intro) stops holding:
+
+**Multiple agents, multiple sessions.** One process's in-memory state is what makes `transition()` race-free (§2). Many concurrent agents means many processes, which reopens that race. Move state to a datastore with per-session locking/CAS, shard by `sessionId` (one session is always one agent's, so the shard key is free), keep `transition()` pure.
+
+**A stuck or dead dialer replica.** Today a stuck transition just freezes one process (server/README). With replicas, that's not acceptable — it needs a lease/heartbeat per session so a health check can detect a dead or hung owner, kill it, and hand the session to another replica. Retries bounded (fixed attempts, then surface `FAILED` to a human) rather than open-ended.
+
+**Real CRM + real lead enrichment.** The mock CRM never times out or rate-limits. Replace the in-memory idempotency reservation (§3) with a durable outbox so a crash can't lose an unsynced activity, add a real timeout + bounded retry around the CRM call, and treat enrichment as the same kind of idempotent, retryable effect — not a special case.
+
+## 7. AI tool usage + what I verified
+
+**Design, before any code.** Worked through the ambiguous parts of the spec (winner semantics, where transitions should live, whether CRM sync can be coupled into the transition, how refill triggers) with Claude, weighing alternatives against this spec's constraints before picking one. That's what produced this file's "chosen interpretation / rejected alternative / tradeoff" format.
+
+**Implementation.** One-shotted from this NOTES.md plus the assessment brief using Claude Code (Fable model) — single pass, no iterative patching of the core domain logic.
+
+**Verified by hand, after generation:**
+- Traced `transition()` (`session.ts`) and `dispatch()`/`runEffects()` (`dialer.ts`) against each §2 invariant directly in the code, not just the tests.
+- `npm test`: 20 tests, 3 files, passing. `npm run typecheck`: clean on server + client.
+- Read `crm/sync.ts` to confirm the idempotency reservation happens before the `await`, and that per-lead chaining actually serializes.
+- Ran the demo by hand: forced a simultaneous-connect race via `/sim/calls/:id/outcome` → one winner, one `CANCELED_BY_DIALER`; hung up → refill; forced a CRM failure via `/sim/crm/failures` → session stayed healthy, call showed `FAILED`.
+- Wrote `server/README.md` while confirming each claim in it against the code.
+
+**Not verified:** load beyond the spec's 2-line/single-session scale; behavior across an actual process restart.
