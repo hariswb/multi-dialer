@@ -4,6 +4,12 @@ Take-home for AI Sales Doctor (advanced track): an agent runs a **2-line dialer 
 
 Design decisions and tradeoffs are in [NOTES.md](NOTES.md).
 
+## How it works
+
+An agent selects leads and starts a session; the dialer places up to 2 calls in parallel from the lead queue. The first call to connect becomes the session's winner and the other line is canceled — while the agent is on the call, no new dialing starts. Every call that reaches a terminal outcome (connected-and-ended, no answer, busy, voicemail, or canceled) writes exactly one CRM activity, synced to both the app DB and a mock external CRM.
+
+All of this is driven by one synchronous state machine so concurrent events (simultaneous connects, hangups, stop) can't corrupt session state — see [server/README.md](server/README.md) for how that's structured and why.
+
 ## Stack
 
 - **Server** — Node.js, Fastify, TypeScript. All state in memory, seeded on boot. Telephony is simulated behind a provider seam.
