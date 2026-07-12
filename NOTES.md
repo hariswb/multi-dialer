@@ -6,6 +6,8 @@ Design decisions, made before implementation. Where the spec is ambiguous, the c
 
 **Central tradeoff:** correctness is bought with the single process. Race-freedom comes from the event loop instead of locks, exactly-once CRM sync from an in-memory reservation instead of an outbox, delivery from an in-process emitter instead of a queue. This makes the core logic provably consistent and testable as pure functions — but no guarantee survives a restart or a second replica. Accepted for this scope (spec allows in-memory; one agent drives one session); the exits are in "What I'd do next".
 
+In implementation see [server/README.md](server/README.md).
+
 ## 1. Winner semantics
 
 Spec signals: `winnerCallId` (nullable, singular) + `CANCELED_BY_DIALER` status + "Show winner call (if connected)".
